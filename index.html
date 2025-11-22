@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Abstract Arena</title>
-  <!-- include React, ReactDOM, Babel -->
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -23,8 +22,8 @@
     #wheel-container {
       position: relative;
       margin: 30px auto;
-      width: 300px;
-      height: 300px;
+      width: 320px;
+      height: 320px;
     }
     #wheel {
       width: 100%;
@@ -47,7 +46,7 @@
     }
     #pointer {
       position: absolute;
-      top: -10px;
+      top: -15px;
       left: 50%;
       margin-left: -15px;
       width: 0;
@@ -56,22 +55,16 @@
       border-right: 15px solid transparent;
       border-bottom: 30px solid #fff;
     }
-    .stats {
-      margin-top: 20px;
-    }
-    .stats div {
-      margin: 5px 0;
-    }
-    .message {
-      margin-top: 20px;
-      font-size: 1.2em;
-    }
-    button {
-      padding: 10px 20px;
-      font-size: 1em;
-      margin-top: 20px;
-      cursor: pointer;
-    }
+    .stats { margin-top: 20px; }
+    .stats div { margin: 5px 0; }
+    .message { margin-top: 20px; font-size: 1.1em; }
+    .missions { margin-top: 30px; text-align: left; display: inline-block; }
+    .missions h3 { margin-bottom: 10px; }
+    .missions ul { list-style: none; padding: 0; }
+    .missions li { margin: 5px 0; display: flex; align-items: center; justify-content: space-between; }
+    .missions button { padding: 4px 8px; font-size: 0.8em; }
+    .referral { margin-top: 30px; font-size: 0.9em; word-break: break-all; }
+    button.spin-button { padding: 10px 20px; font-size: 1em; margin-top: 20px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -81,47 +74,96 @@
     const { useState, useEffect } = React;
 
     function App() {
-      const initialState = {
+      const [userId, setUserId] = useState('');
+      const [state, setState] = useState({
         points: 0,
         spins: 0,
         fragments: 0,
         jackpots: 0,
-        lastFreeSpinDate: null
-      };
-
-      const [state, setState] = useState(initialState);
+        lastFreeSpinDate: null,
+        referredBy: null,
+        hasSpun: false
+      });
       const [angle, setAngle] = useState(0);
       const [message, setMessage] = useState('');
+      const [missions, setMissions] = useState([]);
+      const [refMessage, setRefMessage] = useState('');
 
-      // Load from localStorage and grant free spin daily
+      const missionDefs = [
+        {
+          id: 'spin_once',
+          description: 'Spin the wheel once',
+          condition: (s) => s.hasSpun,
+          reward: { spins: 1 }
+        },
+        {
+          id: 'reach_50_points',
+          description: 'Reach 50 points',
+          condition: (s) => s.points >= 50,
+          reward: { spins: 1 }
+        },
+        {
+          id: 'collect_3_fragments',
+          description: 'Collect 3 NFT fragments',
+          condition: (s) => s.fragments >= 3,
+          reward: { spins: 2 }
+        }
+      ];
+
       useEffect(() => {
+        let uid = localStorage.getItem('abstractArenaUserId');
+        if (!uid) {
+          uid = 'u-' + Math.random().toString(36).substring(2, 10);
+          localStorage.setItem('abstractArenaUserId', uid);
+        }
+        setUserId(uid);
         let saved = {};
         try {
           const data = localStorage.getItem('abstractArenaState');
-          if (data) {
-            saved = JSON.parse(data);
-          }
-        } catch(e) {
+          if (data) saved = JSON.parse(data);
+        } catch (e) {
           saved = {};
         }
         const today = new Date().toISOString().substring(0, 10);
         let spins = saved.spins || 0;
         if (saved.lastFreeSpinDate !== today) {
-          spins += 1; // daily free spin
+          spins += 1;
+        }
+        const params = new URLSearchParams(window.location.search);
+        const ref = params.get('ref');
+        let referredBy = saved.referredBy || null;
+        if (ref && ref !== uid && !referredBy) {
+          spins += 3;
+          referredBy = ref;
+          setRefMessage('Referral bonus: +3 spins!');
         }
         const newState = {
           points: saved.points || 0,
           spins: spins,
           fragments: saved.fragments || 0,
           jackpots: saved.jackpots || 0,
-          lastFreeSpinDate: today
+          lastFreeSpinDate: today,
+          referredBy: referredBy,
+          hasSpun: saved.hasSpun || false
         };
         setState(newState);
+        const initMissions = missionDefs.map(m => ({
+          ...m,
+          completed: m.condition(newState),
+          claimed: saved['mission_claimed_' + m.id] || false
+        }));
+        setMissions(initMissions);
       }, []);
 
-      // Save state to localStorage whenever state changes
       useEffect(() => {
         localStorage.setItem('abstractArenaState', JSON.stringify(state));
+      }, [state]);
+
+      useEffect(() => {
+        setMissions(prev => prev.map(m => {
+          const completed = m.completed || m.condition(state);
+          return { ...m, completed };
+        }));
       }, [state]);
 
       const prizes = [
@@ -137,12 +179,10 @@
       ];
 
       function weightedRandom() {
-        const totalWeight = prizes.reduce((sum, p) => sum + p.weight, 0);
-        let rnd = Math.random() * totalWeight;
+        const total = prizes.reduce((sum, p) => sum + p.weight, 0);
+        let rnd = Math.random() * total;
         for (let i = 0; i < prizes.length; i++) {
-          if (rnd < prizes[i].weight) {
-            return i;
-          }
+          if (rnd < prizes[i].weight) return i;
           rnd -= prizes[i].weight;
         }
         return prizes.length - 1;
@@ -155,22 +195,36 @@
         }
         const index = weightedRandom();
         const selected = prizes[index];
-        // calculate new rotation (rotate multiple turns for effect)
         const segmentAngle = 360 / prizes.length;
         const newRotation = angle + (360 * 5) + ((prizes.length - index) * segmentAngle) - (segmentAngle / 2);
         setAngle(newRotation);
-        // update state after animation (approx 4s)
         setTimeout(() => {
           setState(prev => ({
             points: prev.points + selected.points,
             spins: prev.spins - 1 + selected.spins,
             fragments: prev.fragments + selected.fragments,
             jackpots: prev.jackpots + selected.jackpots,
-            lastFreeSpinDate: prev.lastFreeSpinDate
+            lastFreeSpinDate: prev.lastFreeSpinDate,
+            referredBy: prev.referredBy,
+            hasSpun: true
           }));
-          setMessage(`You won ${selected.name}!`);
+          setMessage('You won ' + selected.name + '!');
         }, 4000);
       }
+
+      function claimMission(mission) {
+        if (mission.completed && !mission.claimed) {
+          setState(prev => ({
+            ...prev,
+            spins: prev.spins + (mission.reward.spins || 0)
+          }));
+          setMissions(prev => prev.map(m => m.id === mission.id ? { ...m, claimed: true } : m));
+          localStorage.setItem('mission_claimed_' + mission.id, true);
+          setMessage('Mission reward claimed: +' + (mission.reward.spins || 0) + ' spins');
+        }
+      }
+
+      const currentUrl = window.location.origin + window.location.pathname;
 
       return (
         <div>
@@ -178,7 +232,7 @@
             <div id="pointer"></div>
             <div id="wheel" style={{ transform: `rotate(${angle}deg)` }}></div>
           </div>
-          <button onClick={spinWheel}>Spin</button>
+          <button className="spin-button" onClick={spinWheel}>Spin</button>
           <div className="stats">
             <div><strong>Spins left:</strong> {state.spins}</div>
             <div><strong>Total points:</strong> {state.points}</div>
@@ -186,9 +240,31 @@
             <div><strong>Jackpots:</strong> {state.jackpots}</div>
           </div>
           {message && <div className="message">{message}</div>}
-          <p style={{ marginTop: '30px', fontSize: '0.9em' }}>
-            Share this page with friends to earn extra spins!
-          </p>
+          {refMessage && <div className="message">{refMessage}</div>}
+          <div className="missions">
+            <h3>Daily Missions</h3>
+            <ul>
+              {missions.map(m => (
+                <li key={m.id}>
+                  <span>{m.completed ? '✅' : '❌'} {m.description}</span>
+                  <span>
+                    {m.completed && !m.claimed ? (
+                      <button onClick={() => claimMission(m)}>Claim</button>
+                    ) : m.claimed ? (
+                      'Claimed'
+                    ) : (
+                      ''
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="referral">
+            <p><strong>Your referral link:</strong></p>
+            <p>{currentUrl}?ref={userId}</p>
+            <p>Share this link to get +3 spins when friends join!</p>
+          </div>
         </div>
       );
     }
