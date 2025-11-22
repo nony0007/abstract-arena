@@ -4,19 +4,191 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Abstract Arena</title>
-  <!-- Include React and ReactDOM from CDN -->
+  <!-- include React, ReactDOM, Babel -->
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+      background: #0c0c0c;
+      color: #f5f5f5;
+    }
+    h1 {
+      margin-top: 20px;
+    }
+    #wheel-container {
+      position: relative;
+      margin: 30px auto;
+      width: 300px;
+      height: 300px;
+    }
+    #wheel {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 8px solid #fff;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      transition: transform 4s cubic-bezier(0.33, 1, 0.68, 1);
+      background: conic-gradient(
+        #f94144 0deg 40deg,
+        #f3722c 40deg 80deg,
+        #f8961e 80deg 120deg,
+        #f9844a 120deg 160deg,
+        #f9c74f 160deg 200deg,
+        #90be6d 200deg 240deg,
+        #43aa8b 240deg 280deg,
+        #577590 280deg 320deg,
+        #277da1 320deg 360deg
+      );
+    }
+    #pointer {
+      position: absolute;
+      top: -10px;
+      left: 50%;
+      margin-left: -15px;
+      width: 0;
+      height: 0;
+      border-left: 15px solid transparent;
+      border-right: 15px solid transparent;
+      border-bottom: 30px solid #fff;
+    }
+    .stats {
+      margin-top: 20px;
+    }
+    .stats div {
+      margin: 5px 0;
+    }
+    .message {
+      margin-top: 20px;
+      font-size: 1.2em;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 1em;
+      margin-top: 20px;
+      cursor: pointer;
+    }
+  </style>
 </head>
 <body>
+  <h1>Abstract Arena Spin Wheel</h1>
   <div id="root"></div>
   <script type="text/babel">
+    const { useState, useEffect } = React;
+
     function App() {
+      const initialState = {
+        points: 0,
+        spins: 0,
+        fragments: 0,
+        jackpots: 0,
+        lastFreeSpinDate: null
+      };
+
+      const [state, setState] = useState(initialState);
+      const [angle, setAngle] = useState(0);
+      const [message, setMessage] = useState('');
+
+      // Load from localStorage and grant free spin daily
+      useEffect(() => {
+        let saved = {};
+        try {
+          const data = localStorage.getItem('abstractArenaState');
+          if (data) {
+            saved = JSON.parse(data);
+          }
+        } catch(e) {
+          saved = {};
+        }
+        const today = new Date().toISOString().substring(0, 10);
+        let spins = saved.spins || 0;
+        if (saved.lastFreeSpinDate !== today) {
+          spins += 1; // daily free spin
+        }
+        const newState = {
+          points: saved.points || 0,
+          spins: spins,
+          fragments: saved.fragments || 0,
+          jackpots: saved.jackpots || 0,
+          lastFreeSpinDate: today
+        };
+        setState(newState);
+      }, []);
+
+      // Save state to localStorage whenever state changes
+      useEffect(() => {
+        localStorage.setItem('abstractArenaState', JSON.stringify(state));
+      }, [state]);
+
+      const prizes = [
+        { name: '+10 points', points: 10, spins: 0, fragments: 0, jackpots: 0, weight: 40 },
+        { name: '+25 points', points: 25, spins: 0, fragments: 0, jackpots: 0, weight: 30 },
+        { name: '+1 extra spin', points: 0, spins: 1, fragments: 0, jackpots: 0, weight: 20 },
+        { name: '+50 points', points: 50, spins: 0, fragments: 0, jackpots: 0, weight: 15 },
+        { name: '+100 points', points: 100, spins: 0, fragments: 0, jackpots: 0, weight: 5 },
+        { name: '+3 extra spins', points: 0, spins: 3, fragments: 0, jackpots: 0, weight: 4 },
+        { name: '+1 NFT fragment', points: 0, spins: 0, fragments: 1, jackpots: 0, weight: 3 },
+        { name: '+2 NFT fragments', points: 0, spins: 0, fragments: 2, jackpots: 0, weight: 2 },
+        { name: 'JACKPOT!', points: 0, spins: 0, fragments: 0, jackpots: 1, weight: 1 }
+      ];
+
+      function weightedRandom() {
+        const totalWeight = prizes.reduce((sum, p) => sum + p.weight, 0);
+        let rnd = Math.random() * totalWeight;
+        for (let i = 0; i < prizes.length; i++) {
+          if (rnd < prizes[i].weight) {
+            return i;
+          }
+          rnd -= prizes[i].weight;
+        }
+        return prizes.length - 1;
+      }
+
+      function spinWheel() {
+        if (state.spins <= 0) {
+          setMessage('No spins left. Invite friends or come back tomorrow!');
+          return;
+        }
+        const index = weightedRandom();
+        const selected = prizes[index];
+        // calculate new rotation (rotate multiple turns for effect)
+        const segmentAngle = 360 / prizes.length;
+        const newRotation = angle + (360 * 5) + ((prizes.length - index) * segmentAngle) - (segmentAngle / 2);
+        setAngle(newRotation);
+        // update state after animation (approx 4s)
+        setTimeout(() => {
+          setState(prev => ({
+            points: prev.points + selected.points,
+            spins: prev.spins - 1 + selected.spins,
+            fragments: prev.fragments + selected.fragments,
+            jackpots: prev.jackpots + selected.jackpots,
+            lastFreeSpinDate: prev.lastFreeSpinDate
+          }));
+          setMessage(`You won ${selected.name}!`);
+        }, 4000);
+      }
+
       return (
-        <div style={{ textAlign: 'center', marginTop: '50px' }}>
-          <h1>Welcome to Abstract Arena</h1>
-          <p>Coming soon!</p>
+        <div>
+          <div id="wheel-container">
+            <div id="pointer"></div>
+            <div id="wheel" style={{ transform: `rotate(${angle}deg)` }}></div>
+          </div>
+          <button onClick={spinWheel}>Spin</button>
+          <div className="stats">
+            <div><strong>Spins left:</strong> {state.spins}</div>
+            <div><strong>Total points:</strong> {state.points}</div>
+            <div><strong>Fragments:</strong> {state.fragments}</div>
+            <div><strong>Jackpots:</strong> {state.jackpots}</div>
+          </div>
+          {message && <div className="message">{message}</div>}
+          <p style={{ marginTop: '30px', fontSize: '0.9em' }}>
+            Share this page with friends to earn extra spins!
+          </p>
         </div>
       );
     }
